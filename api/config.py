@@ -28,6 +28,13 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    @field_validator("openai_api_key", "github_token", "openai_model", mode="before")
+    @classmethod
+    def strip_secret_values(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
 
 @lru_cache
 def get_settings() -> Settings:
