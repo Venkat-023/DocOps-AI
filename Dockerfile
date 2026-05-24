@@ -18,12 +18,14 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api ./api
 COPY frontend ./frontend
+COPY start.sh ./start.sh
 
 WORKDIR /app/frontend
 RUN npm install
 RUN npm run build
 
 WORKDIR /app
+RUN chmod +x /app/start.sh
 EXPOSE 7860
 
-CMD ["sh", "-c", "cd /app/frontend && npm run dev -- --host 127.0.0.1 --port 5173 & cd /app && python -m uvicorn api.main:app --host 0.0.0.0 --port 7860"]
+CMD ["/app/start.sh"]

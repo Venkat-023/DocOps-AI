@@ -11,3 +11,4 @@
 frontend/.tanstack
 frontend/.wrangler
 frontend/.vinxi
+frontend/package-lock.json

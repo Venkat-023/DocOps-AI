@@ -364,18 +364,47 @@ http://localhost:5173
 
 ## Docker Deployment
 
-The Dockerfile is designed for Hugging Face Spaces.
+The repository includes two Docker paths:
 
-It does the following:
+- `docker-compose.yml` for local frontend/backend development.
+- Root `Dockerfile` for Hugging Face Spaces, because Spaces build a Dockerfile directly rather than running Docker Compose.
+
+### Local Docker Compose
+
+Build and run both services:
+
+```bash
+docker compose up --build
+```
+
+Local URLs:
+
+```text
+Frontend: http://localhost:5173
+Backend:  http://localhost:8000
+Health:   http://localhost:8000/health
+```
+
+Compose files:
+
+```text
+backend.Dockerfile   FastAPI backend container
+frontend.Dockerfile  TanStack/Vite frontend container
+docker-compose.yml   Local orchestration for both services
+```
+
+### Hugging Face Docker Space
+
+The root `Dockerfile` is the Hugging Face entrypoint. It:
 
 1. Starts from `python:3.11-slim`.
 2. Installs Node.js.
 3. Installs Python backend dependencies.
 4. Copies the FastAPI backend and TanStack frontend.
-5. Installs frontend dependencies.
-6. Starts FastAPI on internal port `8000`.
-7. Starts Vite on exposed port `7860`.
-8. Proxies frontend API calls to FastAPI.
+5. Installs and builds frontend dependencies.
+6. Runs the frontend internally on `127.0.0.1:5173`.
+7. Runs FastAPI on public port `7860`.
+8. Proxies the frontend through FastAPI so the app has one public URL.
 
 Hugging Face uses:
 

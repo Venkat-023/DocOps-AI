@@ -1,0 +1,25 @@
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    environment:
+      ALLOWED_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      LLM_PROVIDER: ${LLM_PROVIDER:-auto}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      OPENROUTER_MODEL: ${OPENROUTER_MODEL:-openrouter/free}
+    ports:
+      - "8000:8000"
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    environment:
+      VITE_API_URL: http://localhost:8000
+    depends_on:
+      - backend
+    ports:
+      - "5173:5173"
