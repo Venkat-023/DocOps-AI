@@ -1,3 +1,4 @@
+import asyncio
 import json
 import re
 from typing import AsyncGenerator
@@ -64,12 +65,15 @@ async def stream_documentation(system: str, user: str) -> AsyncGenerator[str, No
         raise OpenAIKeyMissingError("OpenAI API key not configured")
 
     try:
-        stream = await client.responses.create(
-            model=settings.openai_model,
-            instructions=system,
-            input=user,
-            max_output_tokens=settings.max_output_tokens,
-            stream=True,
+        stream = await asyncio.wait_for(
+            client.responses.create(
+                model=settings.openai_model,
+                instructions=system,
+                input=user,
+                max_output_tokens=settings.max_output_tokens,
+                stream=True,
+            ),
+            timeout=20.0,
         )
 
         async for event in stream:
@@ -83,6 +87,8 @@ async def stream_documentation(system: str, user: str) -> AsyncGenerator[str, No
 
     except RateLimitError as exc:
         raise OpenAIRateLimitError("Rate limit hit. Wait 30 seconds and retry.") from exc
+    except asyncio.TimeoutError as exc:
+        raise OpenAIUpstreamError("OpenAI API request timed out before streaming started.") from exc
     except APIConnectionError as exc:
         raise _safe_connection_error(exc) from exc
     except APIStatusError as exc:
