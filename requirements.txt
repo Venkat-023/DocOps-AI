@@ -1,0 +1,10 @@
+fastapi
+uvicorn[standard]
+openai
+PyGithub
+tree-sitter
+tree-sitter-python
+tree-sitter-javascript
+python-dotenv
+httpx
+pydantic-settings
