@@ -12,14 +12,4 @@ export default defineConfig({
   tanstackStart: {
     server: { entry: "server" },
   },
-  vite: {
-    server: {
-      allowedHosts: true,
-      proxy: {
-        "/fetch-github": "http://127.0.0.1:8000",
-        "/generate": "http://127.0.0.1:8000",
-        "/health": "http://127.0.0.1:8000",
-      },
-    },
-  },
 });

@@ -2,33 +2,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 export type DocStatus = "idle" | "fetching" | "generating" | "done" | "error";
 
-type SymbolKind = "function" | "class" | "method";
-
-interface BackendSymbol {
-  name: string;
-  type: SymbolKind;
-  line_start: number;
-  line_end: number;
-  params: string[];
-  return_type?: string | null;
-  is_async: boolean;
-  docstring?: string | null;
-}
-
-interface ParsedSymbols {
-  functions: BackendSymbol[];
-  classes: BackendSymbol[];
-  line_count: number;
-  language: string;
-  imports: string[];
-}
-
 export interface Symbols {
   functions: number;
   classes: number;
   lineCount: number;
   language: string;
-  raw?: ParsedSymbols;
 }
 
 interface GenerateOpts {
@@ -37,57 +15,23 @@ interface GenerateOpts {
   selfCritique: boolean;
 }
 
-interface FetchGithubResponse {
-  content: string;
-  file_path: string;
-  language: string;
-  is_pr: boolean;
-  symbols: ParsedSymbols;
-}
+// Mocked generator — produces a realistic README stream.
+function buildMarkdown(formats: string[], symbols: Symbols | null, opts: GenerateOpts) {
+  const fmt = formats[0] ?? "readme";
+  const lang = symbols?.language ?? "TypeScript";
+  const fns = symbols?.functions ?? 14;
+  const cls = symbols?.classes ?? 3;
+  const lines = symbols?.lineCount ?? 312;
 
-const API_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
-
-function toDisplaySymbols(symbols: ParsedSymbols): Symbols {
-  return {
-    functions: symbols.functions.length,
-    classes: symbols.classes.length,
-    lineCount: symbols.line_count,
-    language: symbols.language,
-    raw: symbols,
-  };
-}
-
-function inferLanguage(label: string, code: string) {
-  const lower = label.toLowerCase();
-  if (lower.endsWith(".py") || /\bdef\s+\w+/.test(code)) return "python";
-  if (lower.endsWith(".ts") || lower.endsWith(".tsx") || /\binterface\s+\w+/.test(code)) return "typescript";
-  if (lower.endsWith(".js") || lower.endsWith(".jsx")) return "javascript";
-  if (lower.endsWith(".go")) return "go";
-  if (lower.endsWith(".rs")) return "rust";
-  if (lower.endsWith(".java")) return "java";
-  if (lower.endsWith(".yaml") || lower.endsWith(".yml")) return "yaml";
-  if (lower.endsWith(".json")) return "json";
-  return "javascript";
-}
-
-function localSymbols(code: string, label: string): Symbols {
-  const functions = (code.match(/\b(function|def|fn)\s+\w+|=>\s*{/g) ?? []).length;
-  const classes = (code.match(/\bclass\s+\w+/g) ?? []).length;
-  return {
-    functions: Math.max(functions, 1),
-    classes,
-    lineCount: code.split("\n").length,
-    language: inferLanguage(label, code),
-  };
-}
-
-async function readError(response: Response) {
-  try {
-    const payload = await response.json();
-    return payload.detail || "Request failed. Please try again.";
-  } catch {
-    return "Request failed. Please try again.";
+  if (fmt === "openapi") {
+    return `# OpenAPI Specification\n\n\`\`\`yaml\nopenapi: 3.1.0\ninfo:\n  title: Generated API\n  version: 1.0.0\n  description: Auto-generated from ${fns} handlers across ${lines} lines.\npaths:\n  /users:\n    get:\n      summary: List users\n      responses:\n        '200':\n          description: A paginated user list\n  /users/{id}:\n    get:\n      summary: Fetch one user\n      parameters:\n        - in: path\n          name: id\n          required: true\n          schema: { type: string }\n\`\`\`\n\nSchema coverage analyzed across **${cls} classes** and **${fns} functions**.\n`;
   }
+
+  return `# Project Documentation\n\n> ${opts.onboardingMode ? "Written for engineers new to this codebase." : "Reference docs for active contributors."}\n\nA ${lang.toLowerCase()} module spanning **${lines} lines**, exposing **${fns} functions** and **${cls} classes**. This document describes the public surface, key abstractions, and recommended usage patterns.\n\n## Overview\n\nThe library is designed around three primitives:\n\n1. **Streams** — backpressure-aware async iterators.\n2. **Adapters** — pluggable transport layers (HTTP, WebSocket, in-memory).\n3. **Pipelines** — composable transforms with cancellation.\n\n## Installation\n\n\`\`\`bash\nnpm install @acme/core\n\`\`\`\n\n## Quick start\n\n\`\`\`${lang.toLowerCase() === "python" ? "python" : "ts"}\nimport { createPipeline } from "@acme/core";\n\nconst pipe = createPipeline()\n  .source(httpAdapter("/events"))\n  .transform((evt) => ({ ...evt, ts: Date.now() }))\n  .sink(console.log);\n\nawait pipe.run();\n\`\`\`\n\n## API\n\n### \`createPipeline(options?)\`\n\nCreates a new pipeline instance. Options:\n\n| Param | Type | Description |\n|---|---|---|\n| \`concurrency\` | \`number\` | Max parallel transforms. Default \`4\`. |\n| \`signal\` | \`AbortSignal\` | Cancellation signal. |\n| \`onError\` | \`(err) => void\` | Per-message error handler. |\n\n### \`httpAdapter(url, init?)\`\n\nReturns a source adapter that emits parsed JSON events from a Server-Sent Events endpoint.\n\n## Edge cases\n\n- Empty source: pipeline completes immediately with \`{ count: 0 }\`.\n- Aborted signal: in-flight transforms reject with \`AbortError\`.\n- Backpressure: when sink is slow, source pauses via \`adapter.pause()\`.\n\n## Examples\n\n${opts.onboardingMode ? "See the [getting-started guide](./docs/getting-started.md) for a 5-minute walkthrough.\n\n" : ""}---\n\n_Generated by DocuMind${opts.selfCritique ? " · self-critique pass enabled" : ""}._\n`;
+}
+
+function tokenize(md: string): string[] {
+  return md.match(/(\s+|[^\s]+)/g) ?? [];
 }
 
 export function useDocGen() {
@@ -101,133 +45,77 @@ export function useDocGen() {
     examples: number;
     params: number;
     edge_cases: number;
-    overall?: number;
-    improvements?: string[];
   }>(null);
   const [error, setError] = useState<string | null>(null);
   const [tokens, setTokens] = useState(0);
-  const abortRef = useRef<AbortController | null>(null);
+  const cancelRef = useRef<{ cancelled: boolean } | null>(null);
 
   const fetchFromGitHub = useCallback(async (url: string) => {
     setStatus("fetching");
     setError(null);
-    setOutput("");
-    setQuality(null);
-
-    try {
-      const response = await fetch(`${API_URL}/fetch-github`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url }),
-      });
-
-      if (!response.ok) {
-        throw new Error(await readError(response));
-      }
-
-      const payload = (await response.json()) as FetchGithubResponse;
-      setSourceCode(payload.content);
-      setSourceLabel(payload.file_path);
-      setSymbols(toDisplaySymbols(payload.symbols));
-      setStatus("idle");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not reach backend. Is it running on port 8000?");
+    await new Promise((r) => setTimeout(r, 700));
+    const match = url.match(/github\.com\/([^/]+)\/([^/]+)(?:\/blob\/[^/]+\/(.+))?/);
+    if (!match) {
+      setError("Could not parse GitHub URL. Try github.com/owner/repo[/blob/branch/path].");
       setStatus("error");
+      return;
     }
+    const [, owner, repo, path] = match;
+    const filename = path?.split("/").pop() ?? `${repo}.ts`;
+    const lang = filename.endsWith(".py") ? "Python" : filename.endsWith(".go") ? "Go" : "TypeScript";
+    const demo = `// ${owner}/${repo} · ${filename}\nimport { createPipeline } from "./pipeline";\n\nexport interface UserOptions {\n  id: string;\n  retries?: number;\n}\n\nexport class UserService {\n  constructor(private readonly db: Database) {}\n\n  async fetchUser(opts: UserOptions) {\n    const { id, retries = 3 } = opts;\n    for (let i = 0; i < retries; i++) {\n      try {\n        return await this.db.users.findById(id);\n      } catch (err) {\n        if (i === retries - 1) throw err;\n      }\n    }\n  }\n\n  async listUsers(limit = 50) {\n    return this.db.users.list({ limit });\n  }\n}\n\nexport function createService(db: Database) {\n  return new UserService(db);\n}\n`;
+    setSourceCode(demo);
+    setSourceLabel(`${owner}/${repo}${path ? `/${path}` : ""}`);
+    setSymbols({ functions: 14, classes: 3, lineCount: 312, language: lang });
+    setStatus("idle");
   }, []);
 
   const loadPasted = useCallback((code: string, label = "pasted snippet") => {
     setSourceCode(code);
     setSourceLabel(label);
-    setSymbols(localSymbols(code, label));
+    const fns = (code.match(/\b(function|def|fn)\s+\w+|=>\s*{/g) ?? []).length;
+    const cls = (code.match(/\bclass\s+\w+/g) ?? []).length;
+    const lineCount = code.split("\n").length;
+    const language = /def\s+\w+/.test(code) ? "Python" : /interface\s+\w+|:\s*\w+/.test(code) ? "TypeScript" : "JavaScript";
+    setSymbols({ functions: Math.max(fns, 1), classes: cls, lineCount, language });
     setStatus("idle");
-    setOutput("");
-    setQuality(null);
     setError(null);
   }, []);
 
   const generate = useCallback(
     async (opts: GenerateOpts) => {
       if (!sourceCode) return;
-
-      abortRef.current?.abort();
-      const controller = new AbortController();
-      abortRef.current = controller;
-
+      const ticket = { cancelled: false };
+      if (cancelRef.current) cancelRef.current.cancelled = true;
+      cancelRef.current = ticket;
       setStatus("generating");
       setOutput("");
       setQuality(null);
       setTokens(0);
       setError(null);
 
-      try {
-        const response = await fetch(`${API_URL}/generate`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          signal: controller.signal,
-          body: JSON.stringify({
-            code: sourceCode,
-            symbols: symbols?.raw,
-            format: opts.formats[0] ?? "readme",
-            onboarding_mode: opts.onboardingMode,
-            self_critique: opts.selfCritique,
-            language: symbols?.language,
-          }),
-        });
-
-        if (!response.ok || !response.body) {
-          throw new Error(await readError(response));
-        }
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = "";
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          buffer += decoder.decode(value, { stream: true });
-          const frames = buffer.split("\n\n");
-          buffer = frames.pop() ?? "";
-
-          for (const frame of frames) {
-            if (!frame.startsWith("data: ")) continue;
-
-            const data = frame.slice(6);
-            if (data === "[DONE]") {
-              setStatus("done");
-              return;
-            }
-            if (data.startsWith("[TOKENS]")) {
-              setTokens(Number(data.replace("[TOKENS]", "")) || 0);
-              continue;
-            }
-            if (data.startsWith("[SCORE]")) {
-              setQuality(JSON.parse(data.replace("[SCORE]", "")));
-              continue;
-            }
-            if (data.startsWith("[ERROR]")) {
-              throw new Error(data.replace("[ERROR]", ""));
-            }
-
-            setOutput((previous) => previous + data.replace(/\\n/g, "\n"));
-            setTokens((previous) => previous + 1);
-          }
-        }
-
-        setStatus("done");
-      } catch (err) {
-        if (err instanceof DOMException && err.name === "AbortError") return;
-        setError(err instanceof Error ? err.message : "Generation failed. Please try again.");
-        setStatus("error");
+      const md = buildMarkdown(opts.formats, symbols, opts);
+      const toks = tokenize(md);
+      for (let i = 0; i < toks.length; i++) {
+        if (ticket.cancelled) return;
+        await new Promise((r) => setTimeout(r, 12));
+        setOutput((p) => p + toks[i]);
+        if (i % 3 === 0) setTokens((t) => t + 1);
       }
+      if (opts.selfCritique) await new Promise((r) => setTimeout(r, 600));
+      setQuality({
+        coverage: 92,
+        examples: 88,
+        params: 76,
+        edge_cases: opts.selfCritique ? 84 : 62,
+      });
+      setStatus("done");
     },
     [sourceCode, symbols],
   );
 
   const reset = useCallback(() => {
-    abortRef.current?.abort();
+    cancelRef.current && (cancelRef.current.cancelled = true);
     setStatus("idle");
     setOutput("");
     setSourceCode("");
@@ -238,7 +126,7 @@ export function useDocGen() {
     setTokens(0);
   }, []);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
+  useEffect(() => () => { if (cancelRef.current) cancelRef.current.cancelled = true; }, []);
 
   return {
     status,
