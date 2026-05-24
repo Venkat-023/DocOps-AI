@@ -9,52 +9,130 @@ app_port: 7860
 
 # DocuMind AI
 
-DocuMind AI is an AI-powered documentation generator for software projects. It fetches source code from GitHub or accepts pasted/uploaded code, extracts code structure, builds documentation-specific prompts, and streams generated documentation back to the user in real time.
+DocuMind AI is an AI-powered documentation and repository intelligence platform. It fetches code from GitHub, scans real repository files, extracts structure from source code, generates professional documentation, and lets users chat with the generated report and uploaded repository context.
 
-The deployed Hugging Face Space is available at:
+Live deployment: https://venkat-023-documind-ai.hf.space/
 
-https://venkat-023-documind-ai.hf.space/
+Hugging Face Space: https://huggingface.co/spaces/Venkat-023/DocuMind-Ai
 
-## Problem
+GitHub repository: https://github.com/Venkat-023/DocOps-AI
 
-Engineering teams often delay documentation because writing it manually is slow, repetitive, and hard to keep aligned with changing code. This creates several practical problems:
+## The Problem
 
-- New developers need more time to understand unfamiliar repositories.
-- APIs and modules are used incorrectly because behavior, parameters, and edge cases are not documented.
-- Pull requests ship code without matching README, JSDoc, OpenAPI, wiki, or Docusaurus updates.
-- Documentation quality varies heavily between contributors.
-- Frontend applications cannot reliably consume AI output unless the backend returns predictable, structured data.
+Most software teams do not have a documentation problem because they do not care. They have a documentation problem because useful documentation is expensive to keep current.
 
-DocuMind AI is built to reduce that friction by turning real source code into useful documentation quickly, while keeping the user in control of format, tone, and source input.
+Common pain points:
 
-## Solution
+- New contributors spend hours reading code before understanding the project.
+- README files explain setup, but not the actual implementation.
+- Generated docs often describe only one pasted file instead of the real repository.
+- Code review and onboarding suffer when model results, API behavior, config, and file responsibilities are scattered across the repo.
+- Users need follow-up answers after a report is generated, but normal documentation generators stop after one output.
+- OpenAI credits or rate limits can block demos if the system has no fallback.
 
-DocuMind AI combines a TanStack React frontend with a FastAPI backend.
+DocuMind AI solves this by combining repository scanning, documentation generation, and a fast RAG-style chatbot in one deployed app.
 
-The backend handles four jobs:
+## Our MVP
 
-1. Fetch code from GitHub.
-2. Parse source code structure using AST extraction.
-3. Build format-specific prompts for documentation generation.
-4. Stream OpenAI output token by token to the frontend.
+The MVP is a working end-to-end documentation assistant for code repositories.
 
-The frontend provides a developer-friendly interface for choosing input sources, output formats, onboarding mode, and self-critique scoring.
+It can:
+
+- Accept a GitHub repository, file, or pull request URL.
+- Scan repository files, not only the README.
+- Extract useful code and project structure.
+- Generate a detailed report or documentation output.
+- Stream generation results in the UI.
+- Let users ask follow-up questions about the repo/report through a chatbot.
+- Provide evidence when asked for proof, facts, files, or metrics.
+- Run on Hugging Face Spaces using Docker.
+- Work with OpenRouter, OpenAI, or a local fallback path when no paid LLM credits are available.
+
+The most important MVP outcome is simple: a user can paste a GitHub repo URL, generate documentation, then ask "Which file trains this model?" or "What proof do you have?" and receive a grounded answer with citations from the scanned context.
 
 ## Key Features
 
-- Fetch code from GitHub file, repository, or pull request URLs.
-- Paste or upload code directly from the UI.
-- Extract functions, classes, methods, imports, line counts, parameters, async status, return types, and docstrings where available.
-- Generate documentation in multiple formats:
-  - README.md
-  - JSDoc/docstrings
-  - OpenAPI YAML
-  - Confluence HTML
-  - Docusaurus MDX
-- Stream generated documentation live using Server-Sent Events.
-- Optional self-critique pass that returns quality scores.
-- Dockerized for Hugging Face Spaces.
-- Same-origin deployment on Hugging Face to avoid CORS issues.
+### Repository Intelligence
+
+- Supports whole GitHub repositories.
+- Supports single GitHub files using `/blob/`.
+- Supports pull request URLs using `/pull/`.
+- Fetches README plus representative source/config files.
+- Scans real implementation files such as training scripts, services, config files, and report files.
+- Returns structured data the frontend can use without guessing.
+
+### Code Understanding
+
+- Detects language from file extensions.
+- Extracts symbols from source code:
+  - functions
+  - classes
+  - methods
+  - parameters
+  - line counts
+  - imports
+  - async status
+  - docstrings where available
+- Uses tree-sitter where supported.
+- Uses regex fallback for unsupported languages.
+
+### Documentation Generation
+
+Supported output formats:
+
+- `README.md`
+- JSDoc/docstrings
+- OpenAPI YAML
+- Confluence HTML
+- Docusaurus MDX
+
+Generation modes:
+
+- Technical mode for experienced developers.
+- Onboarding mode for new contributors.
+- Optional self-critique scoring.
+- Streaming output through Server-Sent Events.
+
+### RAG Chatbot
+
+DocuMind includes a chatbot for follow-up questions about the generated report, uploaded documents, or scanned GitHub repository.
+
+The chatbot can answer questions like:
+
+- "Explain this project to a new user."
+- "Which file trains the BiGRU model?"
+- "What proof do you have?"
+- "What are the dataset facts from the README?"
+- "Which files should I inspect first?"
+- "What are the model result metrics?"
+
+When asked for proof or facts, it points to the relevant evidence from the loaded context, such as:
+
+- scanned file names
+- README sections
+- code snippets
+- table rows
+- model metrics
+- command examples
+- class/function names
+
+The chatbot uses:
+
+- OpenRouter when `OPENROUTER_API_KEY` is configured.
+- OpenAI when `OPENAI_API_KEY` and `LLM_PROVIDER=openai` are configured.
+- A fast local retrieval fallback when no paid LLM key is available.
+
+### Frontend Experience
+
+- GitHub URL input.
+- Upload flow.
+- Paste code flow.
+- OpenAPI input flow.
+- Output format selection.
+- Preview, raw, diff, and score tabs.
+- Copy and download actions.
+- Chat panel for repo/report questions.
+- Same-origin Hugging Face deployment to avoid CORS failures.
 
 ## Architecture
 
@@ -62,171 +140,129 @@ The frontend provides a developer-friendly interface for choosing input sources,
 User
   |
   v
-TanStack React Frontend
+React / TanStack Frontend
   |
   | POST /fetch-github
   | POST /generate
+  | POST /chat
   v
 FastAPI Backend
   |
-  |-- GitHub Service: fetches files, repo overview, or PR diff
-  |-- Parser Service: extracts symbols using tree-sitter or regex fallback
-  |-- Prompt Service: builds documentation prompts
-  |-- OpenAI Service: streams generated text
-  |-- Quality Service: scores documentation when enabled
+  |-- GitHub Service
+  |     Fetches repo README, source files, single files, or PR diffs
+  |
+  |-- Parser Service
+  |     Extracts AST/code symbols and fallback metadata
+  |
+  |-- Prompt Service
+  |     Builds format-specific documentation prompts
+  |
+  |-- OpenAI/OpenRouter Service
+  |     Streams generated documentation or uses local fallback
+  |
+  |-- Chat Service
+  |     Ranks source/report chunks and answers with evidence
   |
   v
-OpenAI API
+LLM Provider or Local Fallback
 ```
 
 ## Repository Structure
 
 ```text
 .
-├── api/
-│   ├── main.py
-│   ├── config.py
-│   ├── models/
-│   ├── routers/
-│   ├── services/
-│   └── utils/
-├── frontend/
-│   ├── src/
-│   ├── package.json
-│   └── vite.config.ts
-├── Dockerfile
-├── requirements.txt
-├── .env.example
-└── README.md
+|-- api/
+|   |-- main.py
+|   |-- config.py
+|   |-- models/
+|   |   |-- request_models.py
+|   |   `-- response_models.py
+|   |-- routers/
+|   |   |-- health.py
+|   |   |-- github.py
+|   |   |-- generate.py
+|   |   `-- chat.py
+|   |-- services/
+|   |   |-- github_service.py
+|   |   |-- parser_service.py
+|   |   |-- prompt_service.py
+|   |   |-- openai_service.py
+|   |   |-- quality_service.py
+|   |   `-- chat_service.py
+|   `-- utils/
+|       |-- language_detect.py
+|       `-- code_chunker.py
+|-- frontend/
+|   |-- src/
+|   |-- package.json
+|   `-- vite.config.ts
+|-- Dockerfile
+|-- backend.Dockerfile
+|-- frontend.Dockerfile
+|-- docker-compose.yml
+|-- start.sh
+|-- requirements.txt
+`-- README.md
 ```
-
-## Inputs
-
-DocuMind AI supports these input types.
-
-### 1. GitHub URL
-
-Use a public GitHub URL or a private URL if `GITHUB_TOKEN` is configured.
-
-Supported examples:
-
-```text
-https://github.com/owner/repo/blob/main/path/to/file.py
-https://github.com/owner/repo/pull/123
-https://github.com/owner/repo
-```
-
-Request shape:
-
-```json
-{
-  "url": "https://github.com/owner/repo/blob/main/path/to/file.py"
-}
-```
-
-### 2. Pasted Code
-
-The user can paste source code directly into the frontend. The frontend infers a basic language and sends the code to the backend for generation.
-
-### 3. Uploaded File
-
-The user can upload source files such as:
-
-```text
-.ts, .tsx, .js, .jsx, .py, .go, .rs, .java
-```
-
-### 4. OpenAPI Spec
-
-The user can paste an OpenAPI YAML or JSON specification and generate documentation around it.
-
-## Outputs
-
-### GitHub Fetch Output
-
-Endpoint:
-
-```text
-POST /fetch-github
-```
-
-Response:
-
-```json
-{
-  "content": "source code or diff text",
-  "file_path": "path/to/file.py",
-  "language": "python",
-  "is_pr": false,
-  "symbols": {
-    "functions": [],
-    "classes": [],
-    "line_count": 120,
-    "language": "python",
-    "imports": []
-  }
-}
-```
-
-### Documentation Generation Output
-
-Endpoint:
-
-```text
-POST /generate
-```
-
-The response is an SSE stream.
-
-Stream frames:
-
-```text
-data: TOKEN
-data: [TOKENS]42
-data: [SCORE]{"coverage":90,"examples":85,"params":88,"edge_cases":75,"overall":85,"improvements":[]}
-data: [DONE]
-```
-
-### Generated Documentation Formats
-
-The generated output can be:
-
-- Markdown README
-- Inline JSDoc/docstrings
-- OpenAPI 3.1 YAML
-- Confluence HTML
-- Docusaurus MDX
 
 ## API Contract
 
 ### `GET /health`
 
-Returns backend status.
+Checks whether the backend is running and which provider configuration is active.
+
+Example response:
 
 ```json
 {
   "status": "ok",
-  "model": "openrouter/free or local-fallback",
-  "llm_provider": "openrouter",
+  "model": "openrouter/free",
+  "llm_provider": "auto",
   "github_configured": true
 }
 ```
 
 ### `POST /fetch-github`
 
-Fetches code from GitHub and returns parsed symbols.
+Fetches GitHub content and returns parsed repository/code structure.
 
 Request:
 
 ```json
 {
-  "url": "https://github.com/owner/repo/blob/main/file.py"
+  "url": "https://github.com/owner/repo"
 }
+```
+
+Response:
+
+```json
+{
+  "content": "README and repository scan text",
+  "file_path": "README.md + repository scan",
+  "language": "markdown",
+  "is_pr": false,
+  "symbols": {
+    "functions": [],
+    "classes": [],
+    "line_count": 729,
+    "language": "markdown",
+    "imports": []
+  }
+}
+```
+
+Supported GitHub inputs:
+
+```text
+https://github.com/owner/repo
+https://github.com/owner/repo/blob/main/path/to/file.py
+https://github.com/owner/repo/pull/123
 ```
 
 ### `POST /generate`
 
-Streams documentation.
+Generates documentation and streams tokens as Server-Sent Events.
 
 Request:
 
@@ -251,35 +287,76 @@ confluence
 docusaurus
 ```
 
-## Error Handling
+Stream frames:
 
-The backend returns structured `detail` messages so the frontend can display clear user-facing errors.
-
-Common errors:
-
-```json
-{ "detail": "Cannot parse GitHub URL. Paste a direct file URL like github.com/owner/repo/blob/main/file.py" }
+```text
+data: generated token
+data: [TOKENS]128
+data: [SCORE]{"coverage":90,"examples":85,"params":88,"edge_cases":75,"overall":85,"improvements":[]}
+data: [DONE]
 ```
 
-```json
-{ "detail": "OpenAI API key not configured" }
-```
+### `POST /chat`
+
+Answers follow-up questions using the scanned source and generated report context.
+
+Request:
 
 ```json
-{ "detail": "File too large (1200 lines). Maximum is 800 lines." }
+{
+  "question": "Which file trains the BiGRU model and what proof do you have?",
+  "source": "repository scan text",
+  "report": "generated report text",
+  "source_label": "README.md + repository scan",
+  "history": []
+}
 ```
 
-```json
-{ "detail": "Rate limit hit. Wait 30 seconds and retry." }
-```
+Response:
 
 ```json
-{ "detail": "Could not reach GitHub. Check the URL and try again." }
+{
+  "answer": "Direct answer: the BiGRU model is trained in `src/model_training/train_bigru.py`...",
+  "citations": [
+    {
+      "label": "Repository scan: File: src/model_training/train_bigru.py part 1",
+      "preview": "### File: src/model_training/train_bigru.py..."
+    }
+  ],
+  "provider": "local"
+}
 ```
+
+## Inputs and Outputs
+
+### Inputs
+
+DocuMind supports:
+
+- GitHub repository URLs.
+- GitHub single-file URLs.
+- GitHub pull request URLs.
+- Uploaded files.
+- Pasted code.
+- OpenAPI YAML or JSON.
+- Follow-up chatbot questions.
+
+### Outputs
+
+DocuMind can produce:
+
+- generated README files
+- inline documentation
+- OpenAPI specs
+- Confluence pages
+- Docusaurus pages
+- repository reports
+- quality scores
+- chatbot answers with citations
 
 ## Environment Variables
 
-Backend:
+Create `.env` in the repository root for local backend development.
 
 ```text
 OPENAI_API_KEY=sk-...
@@ -293,91 +370,119 @@ MAX_FILE_SIZE_LINES=800
 MAX_OUTPUT_TOKENS=4000
 ```
 
-Frontend:
+Provider behavior:
+
+- `LLM_PROVIDER=auto`: prefer OpenRouter if configured, otherwise use available provider or local fallback.
+- `LLM_PROVIDER=openai`: use OpenAI when `OPENAI_API_KEY` is configured.
+- `OPENROUTER_API_KEY`: recommended for free or low-cost hosted models.
+- No LLM key: generation/chat use the local fallback where supported.
+
+Frontend local environment:
 
 ```text
 VITE_API_URL=http://localhost:8000
 ```
 
-On Hugging Face, the frontend uses same-origin routes through the Vite proxy, so `VITE_API_URL` can be omitted.
+On Hugging Face, the app runs same-origin through FastAPI, so the frontend does not need a separate public API URL.
 
-## Local Development
+## How To Run Locally
 
-### 1. Install Backend Dependencies
+### Backend
+
+From the repository root:
 
 ```bash
 python -m venv .venv
+```
+
+Windows:
+
+```bash
 .venv\Scripts\activate
 pip install -r requirements.txt
-```
-
-On macOS/Linux:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-```
-
-### 2. Configure Backend
-
-Create `.env` in the repository root:
-
-```text
-OPENAI_API_KEY=your_openai_key
-GITHUB_TOKEN=your_github_token_optional
-ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-```
-
-### 3. Start Backend
-
-```bash
 python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### 4. Install Frontend Dependencies
+macOS/Linux:
+
+```bash
+source .venv/bin/activate
+pip install -r requirements.txt
+python -m uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Backend URL:
+
+```text
+http://localhost:8000
+```
+
+Health check:
+
+```text
+http://localhost:8000/health
+```
+
+### Frontend
+
+In another terminal:
 
 ```bash
 cd frontend
 npm install
-```
-
-### 5. Configure Frontend
-
-Create `frontend/.env.local`:
-
-```text
-VITE_API_URL=http://localhost:8000
-```
-
-### 6. Start Frontend
-
-```bash
 npm run dev -- --host 0.0.0.0 --port 5173
 ```
 
-Open:
+Frontend URL:
 
 ```text
 http://localhost:5173
 ```
 
-## Docker Deployment
+## How To Use The App
 
-The repository includes two Docker paths:
+1. Open the deployed app or local frontend.
+2. Choose an input method:
+   - GitHub URL
+   - Upload
+   - Paste code
+   - OpenAPI
+3. Load the source.
+4. Select the output format.
+5. Enable onboarding mode if the output should be beginner-friendly.
+6. Enable self-critique if a quality score is needed.
+7. Click **Generate docs**.
+8. Use Preview, Raw, Diff view, or Score tabs.
+9. Ask follow-up questions in the chatbot.
+10. Copy or download the final output.
 
-- `docker-compose.yml` for local frontend/backend development.
-- Root `Dockerfile` for Hugging Face Spaces, because Spaces build a Dockerfile directly rather than running Docker Compose.
+Example GitHub repo to test:
+
+```text
+https://github.com/Venkat-023/Longitudinal-Temporal-Disease-Progression
+```
+
+Example chatbot questions:
+
+```text
+Explain what this project does in detail for a new user.
+Which file trains the BiGRU model and what proof do you have?
+What are the dataset facts and model result facts from the README?
+```
+
+## Dockerization
+
+This project includes Docker support for both local development and Hugging Face deployment.
 
 ### Local Docker Compose
 
-Build and run both services:
+Use Docker Compose to run frontend and backend as separate services:
 
 ```bash
 docker compose up --build
 ```
 
-Local URLs:
+Local Docker URLs:
 
 ```text
 Frontend: http://localhost:5173
@@ -385,151 +490,115 @@ Backend:  http://localhost:8000
 Health:   http://localhost:8000/health
 ```
 
-Compose files:
+Docker files:
 
 ```text
-backend.Dockerfile   FastAPI backend container
-frontend.Dockerfile  TanStack/Vite frontend container
-docker-compose.yml   Local orchestration for both services
+backend.Dockerfile    FastAPI backend image
+frontend.Dockerfile   Vite frontend image
+docker-compose.yml    Local multi-container orchestration
 ```
 
-### Hugging Face Docker Space
+### Hugging Face Docker Deployment
 
-The root `Dockerfile` is the Hugging Face entrypoint. It:
+Hugging Face Spaces does not run `docker compose` for the public app. It builds the root `Dockerfile`.
 
-1. Starts from `python:3.11-slim`.
+The root `Dockerfile`:
+
+1. Uses a Python base image.
 2. Installs Node.js.
-3. Installs Python backend dependencies.
-4. Copies the FastAPI backend and TanStack frontend.
-5. Installs and builds frontend dependencies.
-6. Runs the frontend internally on `127.0.0.1:5173`.
-7. Runs FastAPI on public port `7860`.
-8. Proxies the frontend through FastAPI so the app has one public URL.
+3. Installs FastAPI backend dependencies.
+4. Installs frontend dependencies.
+5. Builds the frontend.
+6. Serves the built frontend through FastAPI.
+7. Runs the app on port `7860`, which Hugging Face exposes publicly.
 
-Hugging Face uses:
+The Space metadata at the top of this README tells Hugging Face:
 
-```text
+```yaml
 sdk: docker
 app_port: 7860
 ```
 
-## Hugging Face Deployment
+Deployment URL:
 
-Space:
+```text
+https://venkat-023-documind-ai.hf.space/
+```
+
+Space repository:
 
 ```text
 https://huggingface.co/spaces/Venkat-023/DocuMind-Ai
 ```
 
-Optional free-model Space secret:
+Recommended Hugging Face secrets:
 
 ```text
 OPENROUTER_API_KEY
-```
-
-Other optional Space secrets:
-
-```text
 OPENAI_API_KEY
 GITHUB_TOKEN
+LLM_PROVIDER
 ```
 
-After setting secrets, restart the Space from the Hugging Face settings page.
+After changing secrets, restart the Space from the Hugging Face settings page.
 
-## How To Use
+## Error Handling
 
-1. Open the app.
-2. Choose an input method:
-   - GitHub URL
-   - Upload file
-   - Paste code
-   - OpenAPI spec
-3. Load the source.
-4. Select one or more documentation formats.
-5. Choose modes:
-   - Onboarding mode for beginner-friendly documentation.
-   - Self-critique pass for quality scoring.
-6. Click **Generate docs**.
-7. Watch the documentation stream into the output panel.
-8. Copy or download the result.
+The backend returns structured `detail` messages so the frontend can display clear user-friendly errors.
 
-## Structured Implementation Plan
+Examples:
 
-### Phase 1: Backend Foundation
+```json
+{ "detail": "Cannot parse GitHub URL. Paste a direct file URL like github.com/owner/repo/blob/main/file.py" }
+```
 
-- Create FastAPI app.
-- Add CORS configuration.
-- Add `/health`, `/fetch-github`, and `/generate`.
-- Define Pydantic request and response models.
-- Add environment-based settings.
+```json
+{ "detail": "File too large (1200 lines). Maximum is 800 lines." }
+```
 
-### Phase 2: GitHub Fetching
+```json
+{ "detail": "Could not reach GitHub. Check the URL and try again." }
+```
 
-- Parse GitHub file, repo, and PR URLs.
-- Fetch single files using PyGithub.
-- Fetch PR file patches.
-- Fetch repository README and top-level tree for overview mode.
-- Return predictable structured payloads.
+```json
+{ "detail": "Rate limit hit. Wait 30 seconds and retry." }
+```
 
-### Phase 3: Code Understanding
+## Verification Status
 
-- Detect language from file extension.
-- Parse supported languages with tree-sitter.
-- Extract symbols:
-  - functions
-  - classes
-  - methods
-  - parameters
-  - line ranges
-  - return types
-  - docstrings
-- Fall back to regex for unsupported languages.
+The deployed Hugging Face app was tested with:
 
-### Phase 4: Prompt Engineering
+```text
+https://github.com/Venkat-023/Longitudinal-Temporal-Disease-Progression
+```
 
-- Create separate prompt templates for each output format.
-- Add technical and onboarding tones.
-- Inject symbol summaries into prompts.
-- Limit prompt input size to keep requests reliable.
+Verified behavior:
 
-### Phase 5: Streaming Generation
-
-- Use OpenAI Responses API.
-- Stream tokens through FastAPI as SSE.
-- Collect output for optional quality scoring.
-- Send special frames for token counts, score, errors, and completion.
-
-### Phase 6: Frontend Integration
-
-- Replace mock generation with real backend calls.
-- Parse SSE frames in the browser.
-- Display streamed output in real time.
-- Show structured errors from backend `detail`.
-- Display symbol counts and quality scores.
-
-### Phase 7: Deployment
-
-- Dockerize frontend and backend together.
-- Run frontend on Hugging Face port `7860`.
-- Run backend internally on `8000`.
-- Proxy API requests from frontend to backend.
-- Store API keys as Hugging Face secrets.
-
-## Current Limitations
-
-- Tree-sitter extraction is strongest for Python and JavaScript.
-- TypeScript currently uses JavaScript parser fallback behavior.
-- Very large files are rejected based on `MAX_FILE_SIZE_LINES`.
-- Generation requires a valid `OPENAI_API_KEY`.
-- Private GitHub repositories require `GITHUB_TOKEN`.
+- GitHub repo fetch works.
+- Repository scan includes README and source files.
+- Documentation generation works.
+- Chatbot answers follow-up questions.
+- Proof/facts questions return citations.
+- Dataset/model metrics from README are extracted and reported.
+- Hugging Face Space runs from Docker on port `7860`.
 
 ## Security Notes
 
 - Do not commit `.env` files.
-- Do not paste long-lived API keys into source files.
-- Use Hugging Face Space secrets for deployment credentials.
-- Rotate any API key that has been exposed in chat, logs, screenshots, or commits.
+- Do not commit API keys.
+- Store production keys as Hugging Face Space secrets.
+- Rotate any key that has been pasted into chat, screenshots, logs, or commits.
+- Use a GitHub token only when private repo access or higher rate limits are needed.
+
+## Future Improvements
+
+- Add a vector database for larger repositories.
+- Add persistent chat sessions.
+- Add PR creation for documentation changes.
+- Add deeper TypeScript AST extraction.
+- Add repository-wide dependency graph visualization.
+- Add user authentication for private team deployments.
 
 ## License
 
-Add the project license here before public production release.
+Add a license before using this project in production or distributing it publicly.
