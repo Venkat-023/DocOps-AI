@@ -263,6 +263,9 @@ def _extract_code_language(user_prompt: str) -> str:
 
 
 def _build_local_documentation(code: str, language: str) -> str:
+    if language.lower() in {"markdown", "md"}:
+        return _build_local_markdown_documentation(code)
+
     lines = code.splitlines()
     functions = re.findall(r"\b(?:def|function|fn)\s+([A-Za-z_][A-Za-z0-9_]*)", code)
     classes = re.findall(r"\bclass\s+([A-Za-z_][A-Za-z0-9_]*)", code)
@@ -294,6 +297,114 @@ This `{language}` source contains approximately {len(lines)} lines, {len(functio
 - Review the generated output before publishing.
 - Configure `OPENROUTER_API_KEY` to use OpenRouter free models for richer AI-written documentation.
 - Configure `OPENAI_API_KEY` only if the OpenAI project has active quota.
+"""
+
+
+def _build_local_markdown_documentation(markdown: str) -> str:
+    lines = markdown.splitlines()
+    title = next(
+        (line.lstrip("#").strip() for line in lines if line.startswith("# ")),
+        "Repository Documentation",
+    )
+    description_lines = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            if description_lines:
+                break
+            continue
+        if stripped.startswith("|") or stripped.startswith("```"):
+            if description_lines:
+                break
+            continue
+        description_lines.append(stripped)
+        if len(" ".join(description_lines)) > 240:
+            break
+
+    description = " ".join(description_lines) or "Project overview generated from the repository README."
+    sections = [
+        line.lstrip("#").strip()
+        for line in lines
+        if line.startswith("## ") and "Repository tree" not in line
+    ]
+    bullets = [
+        line.strip()
+        for line in lines
+        if line.strip().startswith(("- ", "* ")) and len(line.strip()) > 3
+    ][:10]
+    table_rows = [
+        line.strip()
+        for line in lines
+        if line.strip().startswith("|")
+        and "---" not in line
+        and line.count("|") >= 2
+    ][:12]
+    tree_items = []
+    in_tree = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped == "## Repository tree":
+            in_tree = True
+            continue
+        if in_tree and stripped.startswith("#"):
+            break
+        if in_tree and stripped:
+            tree_items.append(stripped)
+
+    section_list = "\n".join(f"- {section}" for section in sections[:12]) or "- Overview"
+    bullet_list = "\n".join(bullets) or "- Review the repository files for implementation details."
+    if table_rows:
+        table = "\n".join([table_rows[0], "|---|---|", *table_rows[1:]])
+    else:
+        table = "| Item | Value |\n|---|---|\n| Source | Repository README |"
+    tree = "\n".join(f"- `{item}`" for item in tree_items[:20]) or "- Repository tree was not included in the fetched content."
+
+    return f"""# {title}
+
+{description}
+
+## Problem
+
+This project documents a software workflow described in the fetched repository README. The README indicates the repository is focused on a concrete engineering or research task and includes enough project metadata to guide setup, usage, and review.
+
+## Solution Approach
+
+DocuMind fetched the repository overview from GitHub, extracted the README plus top-level repository tree, and generated this structured documentation from those source materials. Because no external LLM provider is configured on the Space, this output uses the local fallback generator.
+
+## Key Details
+
+{table}
+
+## Main Sections Found
+
+{section_list}
+
+## Highlighted Points
+
+{bullet_list}
+
+## Repository Structure
+
+{tree}
+
+## Inputs
+
+- GitHub repository URL or direct GitHub file URL.
+- Optional output format selection such as README, JSDoc, OpenAPI, Confluence, or Docusaurus.
+- Optional onboarding mode and self-critique settings.
+
+## Outputs
+
+- Fetched repository content.
+- Parsed metadata such as language, line count, and symbol counts when available.
+- Generated documentation streamed back to the frontend.
+- A quality score when self-critique is enabled.
+
+## Next Steps
+
+- Configure `OPENROUTER_API_KEY` to enable richer free-model LLM generation.
+- Use direct source file URLs when you want function/class-level API documentation.
+- Use whole repository URLs when you want a project overview based on the README and top-level tree.
 """
 
 
