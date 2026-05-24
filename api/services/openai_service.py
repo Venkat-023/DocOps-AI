@@ -1,11 +1,19 @@
 import json
+import re
 from typing import AsyncGenerator
 
-from openai import APIConnectionError, APIStatusError, AsyncOpenAI, RateLimitError
+from openai import APIConnectionError, APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient, RateLimitError
 
 from api.config import settings
 
-client = AsyncOpenAI(api_key=settings.openai_api_key) if settings.openai_api_key else None
+client = (
+    AsyncOpenAI(
+        api_key=settings.openai_api_key,
+        http_client=DefaultAsyncHttpxClient(trust_env=False),
+    )
+    if settings.openai_api_key
+    else None
+)
 
 
 class OpenAIKeyMissingError(RuntimeError):
@@ -39,6 +47,17 @@ def _safe_upstream_error(exc: APIStatusError) -> OpenAIUpstreamError:
     return OpenAIUpstreamError(f"OpenAI API error {exc.status_code}: {message}")
 
 
+def _sanitize_error_text(value: str) -> str:
+    return re.sub(r"sk-[A-Za-z0-9_-]+", "sk-***", value)
+
+
+def _safe_connection_error(exc: APIConnectionError) -> OpenAIUpstreamError:
+    cause = exc.__cause__
+    detail = repr(cause) if cause else str(exc)
+    detail = _sanitize_error_text(detail)
+    return OpenAIUpstreamError(f"OpenAI API connection failed: {detail}")
+
+
 async def stream_documentation(system: str, user: str) -> AsyncGenerator[str, None]:
     if client is None:
         raise OpenAIKeyMissingError("OpenAI API key not configured")
@@ -64,7 +83,7 @@ async def stream_documentation(system: str, user: str) -> AsyncGenerator[str, No
     except RateLimitError as exc:
         raise OpenAIRateLimitError("Rate limit hit. Wait 30 seconds and retry.") from exc
     except APIConnectionError as exc:
-        raise OpenAIUpstreamError("OpenAI API connection failed. Try again shortly.") from exc
+        raise _safe_connection_error(exc) from exc
     except APIStatusError as exc:
         raise _safe_upstream_error(exc) from exc
 
