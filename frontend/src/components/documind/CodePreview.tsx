@@ -6,6 +6,10 @@ const langMap: Record<string, string> = {
   JavaScript: "javascript",
   Python: "python",
   Go: "go",
+  typescript: "typescript",
+  javascript: "javascript",
+  python: "python",
+  go: "go",
 };
 
 export function CodePreview({ code, language }: { code: string; language: string }) {

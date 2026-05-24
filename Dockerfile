@@ -21,6 +21,7 @@ COPY frontend ./frontend
 
 WORKDIR /app/frontend
 RUN npm install
+RUN npm run build
 
 WORKDIR /app
 EXPOSE 7860

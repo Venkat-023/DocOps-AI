@@ -115,12 +115,17 @@ async def _fetch_pr_diff(repo, pr_number: int) -> dict:
 
 
 async def _fetch_repo_overview(repo) -> dict:
-    readme = repo.get_readme()
     root_items = repo.get_contents("")
     tree = "\n".join(
         f"{'dir ' if item.type == 'dir' else 'file'} {item.path}" for item in root_items[:80]
     )
-    content = f"{readme.decoded_content.decode('utf-8', errors='replace')}\n\n## Repository tree\n{tree}"
+    try:
+        readme = repo.get_readme()
+        readme_text = readme.decoded_content.decode("utf-8", errors="replace")
+    except GithubException:
+        readme_text = f"# {repo.full_name}\n\nNo README found."
+
+    content = f"{readme_text}\n\n## Repository tree\n{tree}"
 
     return {
         "content": content,
