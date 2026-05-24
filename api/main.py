@@ -22,6 +22,135 @@ app.include_router(generate.router, prefix="/generate", tags=["generate"])
 
 FRONTEND_ASSETS_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist" / "client" / "assets"
 
+DOCUMIND_FALLBACK_SCRIPT = r"""
+<script>
+(() => {
+  if (window.__DOCUMIND_FALLBACK_BOUND) return;
+  window.__DOCUMIND_FALLBACK_BOUND = true;
+
+  const state = { sourceCode: "", sourceLabel: "", symbols: null, language: "markdown", format: "readme" };
+  const byButtonText = (text) => [...document.querySelectorAll("button")]
+    .find((button) => button.textContent.trim().includes(text));
+
+  function ensurePanel(id, title) {
+    let panel = document.getElementById(id);
+    if (panel) return panel;
+    const sections = document.querySelectorAll("section");
+    const host = id === "documind-source-panel" ? sections[0] : sections[1] || document.body;
+    panel = document.createElement("div");
+    panel.id = id;
+    panel.style.cssText = "margin:16px;padding:14px;border:1px solid #e5e5e5;border-radius:8px;background:#fff;font:12px Inter,system-ui,sans-serif;white-space:pre-wrap;max-height:320px;overflow:auto;";
+    panel.innerHTML = `<strong>${title}</strong><div style="margin-top:8px;color:#737373">Waiting...</div>`;
+    host.appendChild(panel);
+    return panel;
+  }
+
+  function setPanel(id, title, html) {
+    const panel = ensurePanel(id, title);
+    panel.innerHTML = `<strong>${title}</strong><div style="margin-top:8px">${html}</div>`;
+  }
+
+  function setGenerateEnabled(enabled) {
+    const button = byButtonText("Generate docs");
+    if (button) {
+      button.disabled = !enabled;
+      button.style.opacity = enabled ? "1" : "";
+      button.style.cursor = enabled ? "pointer" : "";
+    }
+  }
+
+  async function fetchGithub() {
+    const input = document.querySelector('input[type="url"]');
+    const url = input && input.value.trim();
+    if (!url) return;
+    setPanel("documind-source-panel", "Source", "Fetching from GitHub...");
+    try {
+      const response = await fetch("/fetch-github", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "GitHub fetch failed");
+      state.sourceCode = payload.content;
+      state.sourceLabel = payload.file_path;
+      state.symbols = payload.symbols;
+      state.language = payload.language;
+      const lineCount = payload.symbols && payload.symbols.line_count ? payload.symbols.line_count : payload.content.split("\n").length;
+      const functions = payload.symbols && payload.symbols.functions ? payload.symbols.functions.length : 0;
+      const classes = payload.symbols && payload.symbols.classes ? payload.symbols.classes.length : 0;
+      setPanel(
+        "documind-source-panel",
+        "Source loaded",
+        `<code>${payload.file_path}</code><br>${lineCount} lines · ${functions} functions · ${classes} classes<br><br><pre style="margin:0;white-space:pre-wrap">${payload.content.slice(0, 2500).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]))}</pre>`
+      );
+      setGenerateEnabled(true);
+    } catch (error) {
+      setPanel("documind-source-panel", "Fetch error", `<span style="color:#b91c1c">${error.message}</span>`);
+    }
+  }
+
+  async function generateDocs() {
+    if (!state.sourceCode) return;
+    const button = byButtonText("Generate docs") || byButtonText("Regenerate");
+    if (button) button.textContent = "Generating...";
+    setPanel("documind-output-panel", "Generated documentation", "");
+    const output = document.querySelector("#documind-output-panel div");
+    try {
+      const response = await fetch("/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: state.sourceCode,
+          symbols: state.symbols,
+          format: state.format,
+          onboarding_mode: true,
+          self_critique: true,
+          language: state.language,
+        }),
+      });
+      if (!response.ok || !response.body) throw new Error("Generation failed");
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split("\n\n");
+        buffer = frames.pop() || "";
+        for (const frame of frames) {
+          if (!frame.startsWith("data: ")) continue;
+          const data = frame.slice(6);
+          if (data === "[DONE]") break;
+          if (data.startsWith("[ERROR]")) throw new Error(data.slice(7));
+          if (data.startsWith("[TOKENS]") || data.startsWith("[SCORE]")) continue;
+          output.textContent += data.replaceAll("\\n", "\n");
+        }
+      }
+    } catch (error) {
+      output.innerHTML = `<span style="color:#b91c1c">${error.message}</span>`;
+    } finally {
+      if (button) button.textContent = "↻ Regenerate";
+    }
+  }
+
+  function bind() {
+    byButtonText("Fetch")?.addEventListener("click", fetchGithub);
+    byButtonText("Generate docs")?.addEventListener("click", generateDocs);
+    ["README.md", "JSDoc", "OpenAPI YAML", "Confluence", "Docusaurus MDX"].forEach((label) => {
+      byButtonText(label)?.addEventListener("click", () => {
+        state.format = { "README.md": "readme", "JSDoc": "jsdoc", "OpenAPI YAML": "openapi", "Confluence": "confluence", "Docusaurus MDX": "docusaurus" }[label];
+      });
+    });
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", bind);
+  else bind();
+})();
+</script>
+"""
+
 
 def _compiled_stylesheet() -> Path | None:
     stylesheets = sorted(FRONTEND_ASSETS_DIR.glob("styles-*.css"))
@@ -79,6 +208,7 @@ async def frontend_proxy(path: str, request: Request):
                 b'/@tanstack-start/styles.css?routes=',
                 b'/@tanstack-start/styles.css?v=compiled&routes=',
             )
+            body = body.replace(b"</body>", DOCUMIND_FALLBACK_SCRIPT.encode("utf-8") + b"</body>")
         return Response(
             content=body,
             status_code=upstream_response.status_code,
