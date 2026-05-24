@@ -206,7 +206,8 @@ Returns backend status.
 ```json
 {
   "status": "ok",
-  "model": "gpt-4.1-mini",
+  "model": "openrouter/free or local-fallback",
+  "llm_provider": "openrouter",
   "github_configured": true
 }
 ```
@@ -282,9 +283,12 @@ Backend:
 
 ```text
 OPENAI_API_KEY=sk-...
+OPENROUTER_API_KEY=sk-or-...
 GITHUB_TOKEN=ghp_...
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+LLM_PROVIDER=auto
 OPENAI_MODEL=gpt-4.1-mini
+OPENROUTER_MODEL=openrouter/free
 MAX_FILE_SIZE_LINES=800
 MAX_OUTPUT_TOKENS=4000
 ```
@@ -388,15 +392,16 @@ Space:
 https://huggingface.co/spaces/Venkat-023/DocuMind-Ai
 ```
 
-Required Space secret:
+Optional free-model Space secret:
+
+```text
+OPENROUTER_API_KEY
+```
+
+Other optional Space secrets:
 
 ```text
 OPENAI_API_KEY
-```
-
-Recommended Space secret:
-
-```text
 GITHUB_TOKEN
 ```
 

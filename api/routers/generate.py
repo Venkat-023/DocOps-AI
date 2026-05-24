@@ -19,7 +19,7 @@ router = APIRouter()
 
 @router.post("")
 async def generate_docs(req: GenerateRequest):
-    if not settings.openai_api_key:
+    if settings.llm_provider.lower() == "openai" and not settings.openai_api_key:
         raise HTTPException(status_code=401, detail="OpenAI API key not configured")
 
     line_count = len(req.code.splitlines())

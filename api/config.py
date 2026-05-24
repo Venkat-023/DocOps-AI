@@ -7,6 +7,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
+    openrouter_api_key: str = Field(default="", alias="OPENROUTER_API_KEY")
     github_token: str = Field(default="", alias="GITHUB_TOKEN")
     allowed_origins: List[str] = Field(
         default_factory=lambda: [
@@ -16,7 +17,9 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS",
     )
     max_file_size_lines: int = Field(default=800, alias="MAX_FILE_SIZE_LINES")
+    llm_provider: str = Field(default="auto", alias="LLM_PROVIDER")
     openai_model: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL")
+    openrouter_model: str = Field(default="openrouter/free", alias="OPENROUTER_MODEL")
     max_output_tokens: int = Field(default=4000, alias="MAX_OUTPUT_TOKENS")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -28,7 +31,15 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
-    @field_validator("openai_api_key", "github_token", "openai_model", mode="before")
+    @field_validator(
+        "openai_api_key",
+        "openrouter_api_key",
+        "github_token",
+        "llm_provider",
+        "openai_model",
+        "openrouter_model",
+        mode="before",
+    )
     @classmethod
     def strip_secret_values(cls, value):
         if isinstance(value, str):

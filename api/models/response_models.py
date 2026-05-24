@@ -14,4 +14,5 @@ class GitHubFetchResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str
     model: str
+    llm_provider: str
     github_configured: bool
