@@ -9,7 +9,7 @@ from api.config import settings
 client = (
     AsyncOpenAI(
         api_key=settings.openai_api_key,
-        http_client=DefaultAsyncHttpxClient(trust_env=False),
+        http_client=DefaultAsyncHttpxClient(timeout=30.0),
     )
     if settings.openai_api_key
     else None
