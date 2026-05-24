@@ -25,4 +25,4 @@ RUN npm install
 WORKDIR /app
 EXPOSE 7860
 
-CMD ["sh", "-c", "python -m uvicorn api.main:app --host 127.0.0.1 --port 8000 & cd /app/frontend && npm run dev -- --host 0.0.0.0 --port 7860"]
+CMD ["sh", "-c", "cd /app/frontend && npm run dev -- --host 127.0.0.1 --port 5173 & cd /app && python -m uvicorn api.main:app --host 0.0.0.0 --port 7860"]
