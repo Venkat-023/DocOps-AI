@@ -36,3 +36,16 @@ class GenerateRequest(BaseModel):
     onboarding_mode: bool = False
     self_critique: bool = True
     language: Optional[str] = None
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    question: str = Field(min_length=1)
+    source: str = ""
+    report: str = ""
+    source_label: str = ""
+    history: List[ChatMessage] = []

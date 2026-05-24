@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
 from api.config import settings
-from api.routers import generate, github, health
+from api.routers import chat, generate, github, health
 
 app = FastAPI(title="DocuMind AI", version="1.0.0")
 
@@ -20,6 +20,7 @@ app.add_middleware(
 app.include_router(health.router)
 app.include_router(github.router, prefix="/fetch-github", tags=["github"])
 app.include_router(generate.router, prefix="/generate", tags=["generate"])
+app.include_router(chat.router, prefix="/chat", tags=["chat"])
 
 FRONTEND_ASSETS_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist" / "client" / "assets"
 
@@ -29,7 +30,7 @@ DOCUMIND_FALLBACK_SCRIPT = r"""
   if (window.__DOCUMIND_FALLBACK_BOUND) return;
   window.__DOCUMIND_FALLBACK_BOUND = true;
 
-  const state = { sourceCode: "", sourceLabel: "", symbols: null, language: "markdown", format: "readme", output: "", score: null, onboarding: true, critique: true };
+  const state = { sourceCode: "", sourceLabel: "", symbols: null, language: "markdown", format: "readme", output: "", score: null, onboarding: true, critique: true, chatHistory: [] };
   const formatMap = { "README.md": "readme", "JSDoc": "jsdoc", "OpenAPI YAML": "openapi", "Confluence": "confluence", "Docusaurus MDX": "docusaurus" };
   const extMap = { readme: ".md", jsdoc: ".js", openapi: ".yaml", confluence: ".html", docusaurus: ".mdx" };
   const byButtonText = (text) => [...document.querySelectorAll("button")].find((button) => button.textContent.trim().includes(text));
@@ -80,11 +81,13 @@ DOCUMIND_FALLBACK_SCRIPT = r"""
     state.symbols = symbols || fallbackSymbols(content, state.language);
     state.output = "";
     state.score = null;
+    state.chatHistory = [];
     const lineCount = state.symbols.line_count || content.split("\n").length;
     const functions = state.symbols.functions ? state.symbols.functions.length : 0;
     const classes = state.symbols.classes ? state.symbols.classes.length : 0;
     setPanel("documind-source-panel", "Source loaded", `<code>${escapeHtml(label)}</code><br>${lineCount} lines - ${functions} functions - ${classes} classes<br><br><pre style="margin:0;white-space:pre-wrap">${escapeHtml(content.slice(0, 3500))}</pre>`);
     setPanel("documind-output-panel", "Output", "No output yet. Press Generate docs.");
+    ensureChatPanel();
     setGenerateEnabled(true);
   }
 
@@ -94,6 +97,7 @@ DOCUMIND_FALLBACK_SCRIPT = r"""
     state.symbols = null;
     state.output = "";
     state.score = null;
+    state.chatHistory = [];
     setPanel("documind-source-panel", "GitHub URL", "Paste a repository, file, or pull request URL above, then press Fetch.");
     setPanel("documind-output-panel", "Output", "No output yet.");
     setGenerateEnabled(false);
@@ -217,6 +221,70 @@ DOCUMIND_FALLBACK_SCRIPT = r"""
     URL.revokeObjectURL(link.href);
   }
 
+  function ensureChatPanel() {
+    let panel = document.getElementById("documind-chat-panel");
+    if (panel) return panel;
+    const sections = document.querySelectorAll("section");
+    const host = sections[1] || document.body;
+    panel = document.createElement("div");
+    panel.id = "documind-chat-panel";
+    panel.style.cssText = "margin:16px;padding:14px;border:1px solid #ddd6fe;border-radius:8px;background:#fafaff;font:12px Inter,system-ui,sans-serif;";
+    panel.innerHTML = `
+      <strong>Ask about this repo/report</strong>
+      <div id="documind-chat-log" style="margin-top:8px;max-height:220px;overflow:auto;white-space:pre-wrap;color:#262626"></div>
+      <div style="margin-top:10px;display:flex;gap:8px">
+        <input id="documind-chat-input" style="flex:1;border:1px solid #d4d4d4;border-radius:6px;padding:8px" placeholder="Ask about files, model results, setup, risks..." />
+        <button id="documind-chat-send" type="button" style="border:1px solid #7c3aed;border-radius:6px;padding:8px 12px;background:#7c3aed;color:white">Ask</button>
+      </div>
+    `;
+    host.appendChild(panel);
+    document.getElementById("documind-chat-send")?.addEventListener("click", askChat);
+    document.getElementById("documind-chat-input")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") askChat();
+    });
+    return panel;
+  }
+
+  function appendChat(role, text) {
+    ensureChatPanel();
+    const log = document.getElementById("documind-chat-log");
+    const label = role === "user" ? "You" : "DocuMind";
+    log.textContent += `${label}: ${text}\n\n`;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  async function askChat() {
+    const input = document.getElementById("documind-chat-input");
+    const question = input?.value.trim();
+    if (!question) return;
+    input.value = "";
+    appendChat("user", question);
+    appendChat("assistant", "Thinking...");
+    try {
+      const response = await fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          source: state.sourceCode,
+          report: state.output,
+          source_label: state.sourceLabel,
+          history: state.chatHistory.slice(-8),
+        }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.detail || "Chat failed");
+      const log = document.getElementById("documind-chat-log");
+      log.textContent = log.textContent.replace(/DocuMind: Thinking\.\.\.\n\n$/, "");
+      appendChat("assistant", payload.answer);
+      state.chatHistory.push({ role: "user", content: question }, { role: "assistant", content: payload.answer });
+    } catch (error) {
+      const log = document.getElementById("documind-chat-log");
+      log.textContent = log.textContent.replace(/DocuMind: Thinking\.\.\.\n\n$/, "");
+      appendChat("assistant", `Chat error: ${error.message}`);
+    }
+  }
+
   function bind() {
     ["Score", "Copy", "Download", "Open PR"].forEach((label) => {
       const button = byButtonText(label);
@@ -242,6 +310,7 @@ DOCUMIND_FALLBACK_SCRIPT = r"""
     byButtonText("Copy")?.addEventListener("click", copyOutput);
     byButtonText("Download")?.addEventListener("click", downloadOutput);
     byButtonText("Open PR")?.addEventListener("click", () => setPanel("documind-output-panel", "Open PR", "PR creation is not connected in this demo. Use Copy or Download for the generated docs."));
+    ensureChatPanel();
     document.querySelectorAll('button[role="switch"]').forEach((button, index) => {
       button.addEventListener("click", () => {
         if (index === 0) state.onboarding = !state.onboarding;
