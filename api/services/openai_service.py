@@ -3,7 +3,7 @@ import json
 import re
 from typing import AsyncGenerator
 
-from openai import APIConnectionError, APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient, RateLimitError
+from openai import APIConnectionError, APIError, APIStatusError, AsyncOpenAI, DefaultAsyncHttpxClient, RateLimitError
 
 from api.config import settings
 
@@ -93,6 +93,8 @@ async def stream_documentation(system: str, user: str) -> AsyncGenerator[str, No
         raise _safe_connection_error(exc) from exc
     except APIStatusError as exc:
         raise _safe_upstream_error(exc) from exc
+    except APIError as exc:
+        raise OpenAIUpstreamError(f"OpenAI API error: {_sanitize_error_text(str(exc))}") from exc
 
     yield "data: [DONE]\n\n"
 
