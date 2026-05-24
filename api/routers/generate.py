@@ -68,6 +68,9 @@ async def generate_docs(req: GenerateRequest):
         except OpenAIUpstreamError as exc:
             yield f"data: [ERROR]{str(exc)}\n\n"
             yield "data: [DONE]\n\n"
+        except Exception as exc:
+            yield f"data: [ERROR]Generation failed: {type(exc).__name__}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(
         event_generator(),
