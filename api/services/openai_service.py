@@ -152,8 +152,6 @@ def _resolve_provider() -> str:
         return "local"
     if settings.openrouter_api_key:
         return "openrouter"
-    if settings.openai_api_key:
-        return "openai"
     return "local"
 
 

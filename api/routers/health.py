@@ -10,7 +10,7 @@ router = APIRouter()
 async def health():
     provider = settings.llm_provider.lower()
     if provider == "auto":
-        provider = "openrouter" if settings.openrouter_api_key else "openai" if settings.openai_api_key else "local"
+        provider = "openrouter" if settings.openrouter_api_key else "local"
     model = (
         settings.openrouter_model
         if provider == "openrouter"
