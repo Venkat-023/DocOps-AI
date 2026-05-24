@@ -105,6 +105,7 @@ All code blocks must have language tag and a title prop.""",
 def build_prompt(req: GenerateRequest) -> tuple[str, str]:
     tone = TONE_ONBOARDING if req.onboarding_mode else TONE_TECHNICAL
     symbol_summary = _build_symbol_summary(req.symbols)
+    repository_scan_instructions = _build_repository_scan_instructions(req.code)
 
     system_prompt = f"""You are a world-class technical writer with 15 years of experience
 documenting developer tools. You generate accurate, complete, and genuinely useful documentation.
@@ -117,12 +118,13 @@ no explanation. Start directly with the content.
 {FORMAT_PROMPTS.get(req.format, FORMAT_PROMPTS["readme"])}"""
 
     language = req.language or (req.symbols.language if req.symbols else "text")
-    user_prompt = f"""Generate documentation for the following code.
+    user_prompt = f"""Generate documentation for the following source.
 {symbol_summary}
+{repository_scan_instructions}
 
-CODE:
+SOURCE:
 ```{language}
-{req.code[:12000]}
+{req.code[:30000]}
 ```"""
     return system_prompt, user_prompt
 
@@ -167,4 +169,24 @@ Functions ({len(symbols.functions)}): {', '.join(fn_names)}
 Classes ({len(symbols.classes)}): {', '.join(class_names)}
 Total lines: {symbols.line_count}
 Key imports: {', '.join(symbols.imports[:10])}
+"""
+
+
+def _build_repository_scan_instructions(code: str) -> str:
+    if "## Scanned repository files" not in code and "### File:" not in code:
+        return ""
+
+    return """
+REPOSITORY SCAN CONTEXT:
+The source below is a combined GitHub repository scan. It contains the README,
+the repository tree, and representative code/configuration snippets under
+sections named "### File: path".
+
+Produce a detailed repository report that covers BOTH:
+1. README analysis: problem, goal, dataset/domain, setup, usage, outputs, and documented results.
+2. Code analysis: scanned files, each file's role, important functions/classes/scripts, pipeline flow,
+   dependencies, configuration, data paths, execution steps, and risks or missing pieces.
+
+Do not only summarize the README. Use the scanned code snippets as evidence.
+When details are not present in the scanned files, say so instead of inventing.
 """

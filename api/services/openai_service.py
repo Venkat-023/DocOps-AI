@@ -253,6 +253,14 @@ async def _stream_local_documentation(user_prompt: str) -> AsyncGenerator[str, N
 
 
 def _extract_code_from_prompt(user_prompt: str) -> str:
+    match = re.search(r"SOURCE:\n```[^\n]*\n(?P<code>.*)\n```\s*$", user_prompt, flags=re.S)
+    if match:
+        return match.group("code").strip()
+
+    match = re.search(r"CODE:\n```[^\n]*\n(?P<code>.*)\n```\s*$", user_prompt, flags=re.S)
+    if match:
+        return match.group("code").strip()
+
     match = re.search(r"```[^\n]*\n(?P<code>.*?)```", user_prompt, flags=re.S)
     return match.group("code").strip() if match else user_prompt[-4000:]
 
@@ -358,6 +366,9 @@ def _build_local_markdown_documentation(markdown: str) -> str:
     else:
         table = "| Item | Value |\n|---|---|\n| Source | Repository README |"
     tree = "\n".join(f"- `{item}`" for item in tree_items[:20]) or "- Repository tree was not included in the fetched content."
+    scanned_files = _extract_scanned_files(markdown)
+    scanned_summary = _summarize_scanned_files(scanned_files)
+    code_report = _build_code_report(scanned_files)
 
     return f"""# {title}
 
@@ -369,7 +380,7 @@ This project documents a software workflow described in the fetched repository R
 
 ## Solution Approach
 
-DocuMind fetched the repository overview from GitHub, extracted the README plus top-level repository tree, and generated this structured documentation from those source materials. Because no external LLM provider is configured on the Space, this output uses the local fallback generator.
+DocuMind fetched the repository from GitHub, extracted the README, repository tree, and representative source/configuration files, then generated this structured report from those materials. Because no external LLM provider is configured on the Space, this output uses the local fallback generator.
 
 ## Key Details
 
@@ -386,6 +397,22 @@ DocuMind fetched the repository overview from GitHub, extracted the README plus 
 ## Repository Structure
 
 {tree}
+
+## Scanned Code Files
+
+{scanned_summary}
+
+## Code-Level Report
+
+{code_report}
+
+## Execution Flow Inferred From Files
+
+1. Install dependencies from the dependency/configuration files.
+2. Prepare the dataset and expected local paths described by the README.
+3. Run the project entrypoint or training scripts listed in the scanned files.
+4. Review generated result files, reports, plots, or model metrics.
+5. Compare the README claims against code paths and output artifacts before publishing final documentation.
 
 ## Inputs
 
@@ -406,6 +433,83 @@ DocuMind fetched the repository overview from GitHub, extracted the README plus 
 - Use direct source file URLs when you want function/class-level API documentation.
 - Use whole repository URLs when you want a project overview based on the README and top-level tree.
 """
+
+
+def _extract_scanned_files(markdown: str) -> list[dict[str, str]]:
+    pattern = re.compile(
+        r"^### File: (?P<path>.+?)\n\n```[^\n]*\n(?P<body>.*?)(?:\n```)",
+        flags=re.S | re.M,
+    )
+    return [
+        {"path": match.group("path").strip(), "body": match.group("body").strip()}
+        for match in pattern.finditer(markdown)
+    ]
+
+
+def _summarize_scanned_files(scanned_files: list[dict[str, str]]) -> str:
+    if not scanned_files:
+        return "- No code files were included in the scanned content."
+
+    rows = ["| File | Detected role | Notable items |", "|---|---|---|"]
+    for item in scanned_files[:12]:
+        body = item["body"]
+        rows.append(
+            "| "
+            f"`{item['path']}` | "
+            f"{_infer_file_role(item['path'], body)} | "
+            f"{_notable_items(body)} |"
+        )
+    return "\n".join(rows)
+
+
+def _build_code_report(scanned_files: list[dict[str, str]]) -> str:
+    if not scanned_files:
+        return "No code snippets were available in the scanned repository payload."
+
+    sections = []
+    for item in scanned_files[:10]:
+        path = item["path"]
+        body = item["body"]
+        imports = re.findall(r"^(?:from\s+\S+\s+import\s+.+|import\s+.+)", body, flags=re.M)[:8]
+        functions = re.findall(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", body, flags=re.M)[:10]
+        classes = re.findall(r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)", body, flags=re.M)[:10]
+        entrypoint = "Contains a script entrypoint." if "__main__" in body else "No explicit script entrypoint detected in snippet."
+        sections.append(
+            f"### `{path}`\n\n"
+            f"- Role: {_infer_file_role(path, body)}\n"
+            f"- Imports/dependencies seen: {', '.join(f'`{value}`' for value in imports) if imports else 'Not visible in snippet.'}\n"
+            f"- Functions: {', '.join(f'`{value}`' for value in functions) if functions else 'None detected in snippet.'}\n"
+            f"- Classes: {', '.join(f'`{value}`' for value in classes) if classes else 'None detected in snippet.'}\n"
+            f"- Entrypoint: {entrypoint}"
+        )
+    return "\n\n".join(sections)
+
+
+def _infer_file_role(path: str, body: str) -> str:
+    lower = path.lower()
+    text = body.lower()
+    if lower.endswith("requirements.txt") or "pyproject.toml" in lower:
+        return "Dependency/configuration file"
+    if "train" in lower or "fit(" in text:
+        return "Model training or experiment script"
+    if "plot" in lower or "matplotlib" in text or "seaborn" in text:
+        return "Reporting or visualization script"
+    if "check" in lower or "validate" in text:
+        return "Data validation or quality check script"
+    if "pipeline" in lower or "main(" in text or "__main__" in text:
+        return "Pipeline entrypoint or orchestration script"
+    if lower.endswith(".ipynb"):
+        return "Notebook"
+    return "Source file"
+
+
+def _notable_items(body: str) -> str:
+    functions = re.findall(r"^\s*def\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(", body, flags=re.M)[:4]
+    classes = re.findall(r"^\s*class\s+([A-Za-z_][A-Za-z0-9_]*)", body, flags=re.M)[:4]
+    items = [f"functions: {', '.join(functions)}"] if functions else []
+    if classes:
+        items.append(f"classes: {', '.join(classes)}")
+    return "; ".join(items) if items else "No functions/classes visible in snippet"
 
 
 def _local_quality_score() -> dict:
