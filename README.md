@@ -206,7 +206,7 @@ Returns backend status.
 ```json
 {
   "status": "ok",
-  "model": "gpt-5.2",
+  "model": "gpt-4.1-mini",
   "github_configured": true
 }
 ```
@@ -284,7 +284,7 @@ Backend:
 OPENAI_API_KEY=sk-...
 GITHUB_TOKEN=ghp_...
 ALLOWED_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
-OPENAI_MODEL=gpt-5.2
+OPENAI_MODEL=gpt-4.1-mini
 MAX_FILE_SIZE_LINES=800
 MAX_OUTPUT_TOKENS=4000
 ```

@@ -16,7 +16,7 @@ class Settings(BaseSettings):
         alias="ALLOWED_ORIGINS",
     )
     max_file_size_lines: int = Field(default=800, alias="MAX_FILE_SIZE_LINES")
-    openai_model: str = Field(default="gpt-5.2", alias="OPENAI_MODEL")
+    openai_model: str = Field(default="gpt-4.1-mini", alias="OPENAI_MODEL")
     max_output_tokens: int = Field(default=4000, alias="MAX_OUTPUT_TOKENS")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
