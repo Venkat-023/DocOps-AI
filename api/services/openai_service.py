@@ -20,6 +20,25 @@ class OpenAIUpstreamError(RuntimeError):
     pass
 
 
+def _extract_openai_message(exc: APIStatusError) -> str:
+    try:
+        body = exc.response.json()
+        if isinstance(body, dict):
+            error = body.get("error")
+            if isinstance(error, dict) and error.get("message"):
+                return str(error["message"])
+            if body.get("message"):
+                return str(body["message"])
+    except Exception:
+        pass
+    return str(exc)
+
+
+def _safe_upstream_error(exc: APIStatusError) -> OpenAIUpstreamError:
+    message = _extract_openai_message(exc)
+    return OpenAIUpstreamError(f"OpenAI API error {exc.status_code}: {message}")
+
+
 async def stream_documentation(system: str, user: str) -> AsyncGenerator[str, None]:
     if client is None:
         raise OpenAIKeyMissingError("OpenAI API key not configured")
@@ -38,12 +57,16 @@ async def stream_documentation(system: str, user: str) -> AsyncGenerator[str, No
                 escaped = event.delta.replace("\n", "\\n")
                 yield f"data: {escaped}\n\n"
             elif event.type == "response.failed":
-                raise OpenAIUpstreamError("OpenAI generation failed")
+                error = getattr(event.response, "error", None)
+                message = getattr(error, "message", None) or "Response generation failed"
+                raise OpenAIUpstreamError(f"OpenAI API error: {message}")
 
     except RateLimitError as exc:
         raise OpenAIRateLimitError("Rate limit hit. Wait 30 seconds and retry.") from exc
-    except (APIConnectionError, APIStatusError) as exc:
-        raise OpenAIUpstreamError("OpenAI generation failed") from exc
+    except APIConnectionError as exc:
+        raise OpenAIUpstreamError("OpenAI API connection failed. Try again shortly.") from exc
+    except APIStatusError as exc:
+        raise _safe_upstream_error(exc) from exc
 
     yield "data: [DONE]\n\n"
 

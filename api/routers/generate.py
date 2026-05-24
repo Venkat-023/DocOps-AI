@@ -62,8 +62,11 @@ async def generate_docs(req: GenerateRequest):
         except OpenAIRateLimitError:
             yield "data: [ERROR]Rate limit hit. Wait 30 seconds and retry.\n\n"
             yield "data: [DONE]\n\n"
-        except (OpenAIKeyMissingError, OpenAIUpstreamError):
-            yield "data: [ERROR]OpenAI generation failed\n\n"
+        except OpenAIKeyMissingError as exc:
+            yield f"data: [ERROR]{str(exc)}\n\n"
+            yield "data: [DONE]\n\n"
+        except OpenAIUpstreamError as exc:
+            yield f"data: [ERROR]{str(exc)}\n\n"
             yield "data: [DONE]\n\n"
 
     return StreamingResponse(
